@@ -11,15 +11,41 @@ jobs:
     name: Create Release
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
+      - name: Check out repository code
+        uses: actions/checkout@v3
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: jruby-9.4
+          bundler-cache: true
+          bundler: 2.5
+      - name: Run tests
+        run: bundle exec rake
+      - name: Create war
+        run: bundle exec warble runnable war ${{ github.workspace }}/Gemfile
+      - name: Verify that .war has been built
+        run: ls gollum.war
+      - name: Calculate digest for gollum.war
+        run: sha256sum gollum.war > gollum.war.digest.txt && cat gollum.war.digest.txt
+      - name: Add URL of current workflow run to the digest file 
+        run: |
+          echo "You can also find this SHA sum in the build that generated this version of gollum.war:" >> gollum.war.digest.txt
+          echo "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> gollum.war.digest.txt
+          cat gollum.war.digest.txt
       - name: Create Release
         id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # This token is provided by Actions, you do not need to create your own token
+        uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref }}
-          release_name: Release ${{ github.ref }}
-          draft: false
-          prerelease: false
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          token:  ${{ secrets.GITHUB_TOKEN }}
+          body_path: "LATEST_CHANGES.md"
+          files: |
+            gollum.war
+            LICENSE
+            gollum.war.digest.txt

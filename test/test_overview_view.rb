@@ -62,12 +62,12 @@ context "Precious::Views::Overview" do
   end
 
   test "breadcrumb with no path" do
-    assert_equal 'Home', @page.breadcrumb
+    assert_equal '', @page.breadcrumb
   end
 
   test "folders first" do
     @page.instance_variable_set("@base_url", "")
-	results = [FakePageResult.new("Gondor/Bromir.md"), FakePageResult.new("Hobbit.md"), FakePageResult.new("Home.md"), FakePageResult.new("Mordor/Eye-Of-Sauron.md"), FakePageResult.new("Mordor/todo.md"), FakePageResult.new("Rivendell/Elrond.md"), FakePageResult.new("My-Precious.md"), FakePageResult.new("Zamin.md"), FakePageResult.new("Samwise-Gamgee.md"), FakePageResult.new("roast-mutton.md"), FakePageResult.new("Bilbo-Baggins.md")]
+	results = [FakePageResult.new("Gondor/Boromir.md"), FakePageResult.new("Hobbit.md"), FakePageResult.new("Home.md"), FakePageResult.new("Mordor/Eye-Of-Sauron.md"), FakePageResult.new("Mordor/todo.md"), FakePageResult.new("Rivendell/Elrond.md"), FakePageResult.new("My-Precious.md"), FakePageResult.new("Zamin.md"), FakePageResult.new("Samwise-Gamgee.md"), FakePageResult.new("roast-mutton.md"), FakePageResult.new("Bilbo-Baggins.md")]
     @page.instance_variable_set("@results", results)
     files = 0
     folders = 0
@@ -82,7 +82,7 @@ context "Precious::Views::Overview" do
     results = [FakePageResult.new("Mordor/Eye-Of-Sauron.md"), FakeFileResult.new("Mordor/Aragorn.pdf"), FakePageResult.new("Mordor/Orc/Saruman.md"), FakeFileResult.new("Mordor/.gitkeep")]
     @page.instance_variable_set("@results", results)
     result = @page.files_folders.first
-    assert_equal result[:icon].start_with?('<svg class="octicon octicon-file-directory'), true
+    assert_equal result[:icon].start_with?('<svg class="octicon octicon-file-directory-fill'), true
     assert_equal result[:type], 'dir'
     assert_equal result[:url], '/gollum/overview/Mordor/Orc/'
     assert_equal result[:is_file], false

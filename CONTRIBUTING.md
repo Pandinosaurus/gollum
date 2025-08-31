@@ -21,7 +21,7 @@ Before submitting an issue, **please carefully look through the following places
 
 Security vulnerabilities can be reported directly to the maintainers using these GPG keys:
 
-* [@dometto](https://keys.openpgp.org/vks/v1/by-fingerprint/02354CC9F820B52CC2791979BB8CCC95FD83B795)
+* [@dometto](https://keys.openpgp.org/vks/v1/by-fingerprint/16E08F9EF05BAA7E16165C4750D1BBE8362E93F1)
 
 Lastly, please **consider helping out** by opening a Pull Request!
 
@@ -29,14 +29,102 @@ Lastly, please **consider helping out** by opening a Pull Request!
 
 You can triage issues which may include reproducing bug reports or asking for vital information, such as version numbers or reproduction instructions. If you would like to start triaging issues, one easy way to get started is to [subscribe to gollum on CodeTriage](https://www.codetriage.com/gollum/gollum).
 
+## Set up your development environment
+
+If you want to hack on Gollum, you'll need to set up a development
+environment.
+
+To get started, you'll need:
+
+  - A recent version of [Git][git]
+  - A recent version of [Ruby][rubylang].
+  - A recent version of [Node JS][nodejs].
+
+Refer to their installation instructions. Installation methods differ depending
+on your operating system.
+
+Once you have those:
+
+  - Install Bundler, the Ruby package manager. In a terminal:
+    ```sh
+    gem install bundler
+    ```
+  - Install Yarn, a JavaScript package manager. [See Yarn's install
+    guide][yarn-install].
+
+Now, you can start setting up Gollum to run locally:
+
+  1. Clone the git repository. In a terminal:
+
+     ```sh
+     git clone https://github.com/gollum/gollum.git
+     ```
+  2. Change directory into the cloned project:
+     ```sh
+     cd gollum
+     ```
+  3. Bundle the project's Ruby dependencies using Bundler:
+     ```sh
+     [sudo] bundle install
+     ```
+  4. Install the project's JavaScript dependencies using Yarn:
+     ```sh
+     yarn install
+     ```
+  5. Configure the local git repository to use `master` as the default branch
+     when initializing new git repositories:
+     ```sh
+     git config --local init.defaultbranch=master
+     ```
+
+     This is currently required make the test suite pass when running it
+     locally.[^1]
+
+If all went well, you should now be able to run the test suite using the
+following command:
+
+```sh
+bundle exec rake
+```
+
+If you already have a Gollum wiki, you can also browse it via your local version
+of Gollum:
+
+```sh
+bundle exec gollum <path/to/my/wiki/root>
+```
+
+Or you can clone an example wiki and browse that:
+
+```sh
+git clone test/examples/lotr.git ~/lotr-wiki
+bundle exec gollum ~/lotr-wiki
+```
+
+With this, you're ready to start contributing and open your first [pull
+request](#opening-a-pull-request).
+
+[git]: https://git-scm.com/downloads
+[nodejs]: https://nodejs.org
+[rubylang]: https://www.ruby-lang.org
+[yarn-install]: https://yarnpkg.com/getting-started/install
+
+[^1]: Gollum's test suite will clone and initialize test git repositories using
+      your system's `git` executable. These test git repositories are
+      committed to the codebase, and all of them use `master` as the `HEAD`. If
+      `init.defaultbranch` is set to `main` or something else in your global git
+      configuration file, this will cause many tests to erroneously fail. It's
+      on our to-do list to move these committed git repos to using a `main`
+      branch.
 
 ## Opening a Pull Request
 
 Pull Requests fixing bugs, implementing new features, or updating documentation and dependencies are all very welcome! If you would like to help out with the project, you can pick an open issue from the issue tracker. We're more than happy to help you get started! Here's how you can proceed:
 
-1. Fork and clone Gollum.
+1. Fork and clone Gollum. See [Set up your development
+   environment](#set-up-your-development-environment).
 2. Create a thoughtfully named topic branch to contain your changes.
-3. If you haven't installed dependencies yet, navigate to your clone and execute:  
+3. If you haven't installed dependencies yet, navigate to your clone and execute:
 	```
 	[sudo] bundle install
 	```
@@ -47,23 +135,32 @@ Pull Requests fixing bugs, implementing new features, or updating documentation 
 8. Push the branch to your fork on GitHub.
 9. Create a pull request for Gollum.
 
-**Notes:**
-* Do not change Gollum's version numbers, we will do that on our own.
+Do not change Gollum's version number, we will do that on our own.
 
 ### Running tests
 
 1. Install [Bundler](http://bundler.io/).
 2. Navigate to the cloned source of Gollum.
-3. Install dependencies:  
+3. Install dependencies:
 	```
 	[sudo] bundle install
 	```
-4. Run the tests:  
+4. Run the tests:
 	```
 	bundle exec rake test
 	```
-	
-To profile slow tests, you can use `bundle exec rake test TESTOPTS="--verbose"`.
+
+To profile slow tests, you can use the `--verbose` flag:
+
+```sh
+bundle exec rake test TESTOPTS="--verbose"
+```
+
+You can also run a single test file with the following command:
+
+```sh
+bundle exec ruby <test/test_the_file_i_want_to_run.rb>
+```
 
 ### Working with test repositories
 
@@ -80,9 +177,22 @@ git commit -am "Add test"
 git push ../lotr.git/ master
 ```
 
+## Assets
+
+Gollum uses [yarn](https://yarnpkg.com/) and [sprockets](https://github.com/rails/sprockets) to manage assets. By default, Gollum uses the precompiled static assets that are packaged with the gem (under `lib/gollum/public/assets`). If you're making changes to Gollum's JavaScript or (S)CSS assets, you might want to develop by calling `gollum` with the `--development-assets` flag. This will cause the application to use the unpackaged assets that you are editing (under `lib/gollum/public/gollum/` and in your local `node_modules` directory), so you can test and tweak. Once you are satisfied with your changes, it's time to [update the static assets](#updating-static-assets)!
+
+You can also enable the use of development assets by setting the `APP_ENV` environment variable to `gollum_development`: for example, with `APP_ENV=gollum_development bundle exec gollum ...`.
+
+For convenience, Gollum also allows developers to set a custom location for `node_modules` (by default expected to be in the root of the project) when using `--development-assets`. Set the `GOLLUM_DEV_ASSETS` environment variable to do this, e.g.: `GOLLUM_DEV_ASSETS=/path/to/my/node_modules gollum --development-assets`
+
 ## Updating static assets
 
-This is necessary whenever changes have been made to the assets in `lib/gollum/public/gollum/javascript` (mostly SASS, CSS, and JS files), to ensure the changes are also present in the [released](#releasing-the-gem) version of the gem. Steps:
+This is necessary whenever changes have been made to the assets in
+`lib/gollum/public/gollum/javascript` (mostly SASS, CSS, and JS files), to
+ensure the changes are also present in the [released](#releasing-the-gem)
+version of the gem.
+
+Steps:
 
 1. `git rm -r lib/gollum/public/assets`
 1. `bundle exec rake precompile`

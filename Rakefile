@@ -1,12 +1,23 @@
 require 'rubygems'
 require 'rake'
 require 'date'
+require 'tempfile'
+
+NODE_MODULES = File.join(File.dirname(__FILE__), 'node_modules')
 
 #############################################################################
 #
 # Helper functions
 #
 #############################################################################
+
+def release_branch
+  ENV.fetch('RELEASE_BRANCH', 'master')
+end
+
+def date
+   Time.now.strftime("%Y-%m-%d")
+end
 
 def name
   @name ||= Dir['*.gemspec'].first.split('.').first
@@ -15,6 +26,14 @@ end
 def version
   line = File.read("lib/#{name}.rb")[/^\s*VERSION\s*=\s*.*/]
   line.match(/.*VERSION\s*=\s*['"](.*)['"]/)[1]
+end
+
+def latest_changes_file
+  'LATEST_CHANGES.md'
+end
+
+def history_file
+  'HISTORY.md'
 end
 
 # assumes x.y.z all digit version
@@ -30,20 +49,12 @@ def bump_version
   old_file = File.read("lib/#{name}.rb")
   old_version_line = old_file[/^\s*VERSION\s*=\s*.*/]
   new_version = next_version
-  # replace first match of old vesion with new version
+  # replace first match of old version with new version
   old_file.sub!(old_version_line, "  VERSION = '#{new_version}'")
 
   File.write("lib/#{name}.rb", old_file)
 
   new_version
-end
-
-def date
-  Date.today.to_s
-end
-
-def rubyforge_project
-  name
 end
 
 def gemspec_file
@@ -58,6 +69,16 @@ def replace_header(head, header_name)
   head.sub!(/(\.#{header_name}\s*= ').*'/) { "#{$1}#{send(header_name)}'"}
 end
 
+def bundle_katex_fonts(assets_path)
+  fonts_subpath = File.join('katex', 'dist', 'fonts')
+  fonts_source = File.join(NODE_MODULES, fonts_subpath)
+  fonts_target = File.join(assets_path, fonts_subpath)
+  puts "\n  Copying KaTeX fonts from #{fonts_source} to #{fonts_target}..."
+  `mkdir "#{fonts_target}"`
+  `cp "#{fonts_source}"/*.woff2 "#{fonts_target}"/`
+  puts "... Done."
+end
+
 #############################################################################
 #
 # Standard tasks
@@ -67,9 +88,21 @@ end
 task :default => :test
 
 require 'rake/testtask'
+
+namespace :test do
+  Rake::TestTask.new('capybara') do |test|
+    test.libs << 'lib' << 'test' << '.'
+    test.pattern = 'test/integration/**/test_*.rb'
+    test.verbose = true
+    test.warning = false
+  end
+end
+
 Rake::TestTask.new(:test) do |test|
   test.libs << 'lib' << 'test' << '.'
-  test.pattern = 'test/**/test_*.rb'
+  test.test_files = FileList.new('test/**/test_*.rb') do |fl|
+    fl.exclude('test/integration/**/test_*.rb')
+  end
   test.verbose = true
   test.warning = false
 end
@@ -110,14 +143,16 @@ end
 
 desc 'Create a release build and push to rubygems'
 task :release => :build do
-  unless `git branch` =~ /^\* master$/
-    puts "You must be on the master branch to release!"
+  branch = release_branch
+  unless `git branch` =~ /^\* #{branch}$/
+    puts "You must be on the #{branch} branch to release!"
     exit!
   end
+  Rake::Task[:changelog].execute
   sh "git commit --allow-empty -a -m 'Release #{version}'"
-  sh "git pull --rebase origin master"
+  sh "git pull --rebase origin #{branch}"
   sh "git tag v#{version}"
-  sh "git push origin master"
+  sh "git push origin #{branch}"
   sh "git push origin v#{version}"
   sh "gem push pkg/#{name}-#{version}.gem"
 end
@@ -143,12 +178,9 @@ task :gemspec => :validate do
   spec = File.read(gemspec_file)
   head, manifest, tail = spec.split("  # = MANIFEST =\n")
 
-  # replace name version and date
+  # replace name and version
   replace_header(head, :name)
   replace_header(head, :version)
-  replace_header(head, :date)
-  #comment this out if your rubyforge_project has a different name
-  replace_header(head, :rubyforge_project)
 
   # determine file list from git ls-files
   files = `git ls-files`.
@@ -179,13 +211,78 @@ task :validate do
   end
 end
 
+desc 'Build changelog'
+task :changelog do
+  [latest_changes_file, history_file].each do |f|
+    unless File.exist?(f)
+      puts "#{f} does not exist but is required to build a new release."
+      exit!
+    end
+  end
+
+  latest_changes = File.open(latest_changes_file)
+  version_pattern = "# #{version}"
+
+  if !`grep "#{version_pattern}" #{history_file}`.empty?
+    puts "#{version} is already described in #{history_file}"
+    exit!
+  end
+
+  begin
+    unless latest_changes.readline.chomp! =~ %r{#{version_pattern}}
+      puts "#{latest_changes_file} should begin with '#{version_pattern}'"
+      exit!
+    end
+  rescue EOFError
+    puts "#{latest_changes_file} is empty!"
+    exit!
+  end
+
+  body = latest_changes.read
+  body.scan(/\s*#\s+\d\.\d.*/) do |match|
+    puts "#{latest_changes_file} may not contain multiple markdown headers!"
+    exit!
+  end
+
+  temp = Tempfile.new
+  temp.puts("#{version_pattern} / #{date}\n#{body}\n")
+  temp.close
+  `cat #{history_file} >> #{temp.path}`
+  `cat #{temp.path} > #{history_file}`
+end
+
 desc 'Precompile assets'
 task :precompile do
+  # Attempt to install JavaScript dependencies managed by Yarn via the
+  # `package.json` file in Gollum's project root. If it fails, raise an error
+  # and exit the task early.
+  puts "\n  Installing `yarn`-managed JavaScript dependencies...  \n\n"
+  system "yarn install"
+    unless $?.success?
+    raise "This task tried to run `yarn install` to get up-to-date "          \
+      "JavaScript dependencies before precompilation. But it failed. Please " \
+      "run `yarn install` manually from your shell and resolve any issues. "  \
+      "It's possible that you just need to install `yarn` on your system."
+  end
+
+  require 'terser'
+  module Precious
+    module Assets
+      JS_COMPRESSOR = ::Terser.new
+    end
+  end
+
   require './lib/gollum/app.rb'
+
+  # Next, configure the Sprockets asset pipeline and precompile production-
+  # ready assets.
   Precious::App.set(:environment, :production)
+
   env = Precious::Assets.sprockets
-  path = ENV.fetch('GOLLUM_ASSETS_PATH', ::File.join(File.dirname(__FILE__), 'lib/gollum/public/assets'))
+  path = ENV.fetch 'GOLLUM_ASSETS_PATH',
+    File.join(File.dirname(__FILE__), 'lib/gollum/public/assets')
   manifest = Sprockets::Manifest.new(env, path)
+
   Sprockets::Helpers.configure do |config|
     config.environment = env
     config.prefix      = Precious::Assets::ASSET_URL
@@ -193,6 +290,9 @@ task :precompile do
     config.public_path = path
     config.manifest    = manifest
   end
-  puts "Precompiling assets to #{path}..."
+
+  manifest.clobber
+  puts "\n  Precompiling assets to #{path}...  \n\n"
   manifest.compile(Precious::Assets::MANIFEST)
+  bundle_katex_fonts(path)
 end

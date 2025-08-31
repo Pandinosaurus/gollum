@@ -1,8 +1,16 @@
-//= require primer
-//= require editor
-//= require dialog
-//= require criticmarkup
-//= require tables
-//= require emoji
-//= require template
-//= require spinner
+@use 'template';
+@use 'editor';
+@use 'criticmarkup';
+@use 'tables';
+@use 'emoji';
+@use 'dialog';
+@use 'highlights';
+@use 'spinner';
+
+//  Simply importing @primer/css/index.scss also imports the unneeded marketing styles, so import the following components manually:
+@use '@primer/css/color-modes';
+@use '@primer/css/core';
+@use '@primer/css/product';
+
+// Our own styling that needs to be defined after Primer is imported
+@use 'wiki_content';

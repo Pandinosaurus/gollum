@@ -1,12 +1,60 @@
-# 5.2.3 2021-04-18
+# 6.1.0 / 2024-12-23
+
+## Fixes & Improvements
+* Fixed a typo in the deprecation message for `--mathjax` (@DavidForster)
+* Update Mermaid to 11.4
+* Add wiki permission check to docker run script
+
+# 6.0.1 / 2024-07-25
+
+## Fixes & Improvements
+
+* Use static assets when `APP_ENV` is `development` (@dometto)
+* Explicitly require Rack 3 or greater (@dometto)
+* Let the `--base-path` wiki option handle prefixed and suffixed slashes in path values. (i.e. `--base-path /my-wiki`) (@dometto)
+
+# 6.0.0 / 2024-05-03
+
+# Breaking Changes
+
+* Docker image: removed deprecated automatic activation of --mathjax. Pass '--math mathjax' to continue using mathjax, or '--math' to use KaTeX (see below).
+* RACK_ENV is ignored, please use APP_ENV instead (@svoop).
+
+## New features
+
+* Add support for Mermaid diagrams (@dometto).
+* Add support for downloading page sources with ?raw (@tstein).
+* Add openssh client to docker images for ssh: repo support. (@jagerkin).
+* Add support for mathematical typesetting using KaTeX (@dometto). Users can now choose between MathJax and KaTeX with the --math flag.
+* Add support for more languages (Chinese).
+
+## Fixes & Improvements
+
+* Fix (Docker image): add git configuration for `/wiki` as safe directory. #2006
+* Fix: use `base_path` as set in config file.
+
+# 5.3.0 / 2022-05-25
+
+* Feature: allow for overriding only specific Mustache templates/partials (@beporter)
+* Feature: Add option to show browser's local time (@NikitaIvanovV)
+* Improvement: presentation on mobile devises (@benjaminwil)
+* Improvement: Add page context to template filter. #1603 (@tevino)
+* Fix: restore normalize check on file upload (@manofstick)
+* Fix mathjax on edit and create pages. #1772 (@fhchl)
+* Fix utf-8 issues: #1721 #1758 #1801 (@basking2, @dometto)
+* Fix an IME rendering issue. #1735 (@yy0931)
+* Fix broken history button when viewing historical deleted file. (@NikitaIvanovV)
+* Fix: non-ascii characters in page names are not rendered correctly in the preview tab of the "Edit" page. #1739 (@yy0931)
+* Fix: anchors and header display on JRuby. #1779
+# 5.2.3 / 2021-04-18
 
 * Fix bug preventing page titles from being displayed
 
-# 5.2.1 2021-02-25
+# 5.2.1 / 2021-02-25
 
 * Fix include call to a missing asset (@benjaminwil). This caused slow first page loads on JRuby.
 
-# 5.2 2021-02-24
+# 5.2 / 2021-02-24
 
 * Improved styling and Primer upgrade (@benjaminwil)
 * Add redirect to rename commit (@ViChyavIn)
@@ -21,7 +69,7 @@
 
 * Bugfixes
 * Add autosave feature (#1576)
-* Add Add quick access to diff of each commit in the history
+* Add quick access to diff of each commit in the history
 
 # 5.0 / 2020-03-17
 
@@ -69,7 +117,7 @@ Many of these changes have been made possible by removing the default grit adapt
 * Major enhancements
   * Made the Gollum theme responsive [@rtrvrtg](https://github.com/rtrvrtg) (#831)
   * Depends on new [gollum-lib](https://github.com/gollum/gollum-lib) `4.0.0`
-    * Allows specifiying [git adapter](https://github.com/gollum/gollum/wiki/Git-adapters) with `--adapter` [@bartkamphorst](https://github.com/bartkamphorst), [@dometto](https://github.com/dometto)
+    * Allows specifying [git adapter](https://github.com/gollum/gollum/wiki/Git-adapters) with `--adapter` [@bartkamphorst](https://github.com/bartkamphorst), [@dometto](https://github.com/dometto)
 * Numerous bugfixes
   * **NB**: please pass `--h1-title` if you do not want page titles to default to the page's filepath. See [here](https://github.com/gollum/gollum/wiki/Page-titles).
 

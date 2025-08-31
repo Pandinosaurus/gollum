@@ -2,8 +2,9 @@ module Precious
   module Views
     class Page < Layout
       include HasPage
+      include HasMath
 
-      attr_reader :content, :page, :header, :footer, :preview, :historical
+      attr_reader :page, :header, :footer, :preview, :historical, :version
       
       VALID_COUNTER_STYLES = ['decimal', 'decimal-leading-zero', 'arabic-indic', 'armenian', 'upper-armenian',
         'lower-armenian', 'bengali', 'cambodian', 'khmer', 'cjk-decimal', 'devanagari', 'georgian', 'gujarati', 'gurmukhi',
@@ -14,7 +15,6 @@ module Precious
 
       DATE_FORMAT    = "%Y-%m-%d %H:%M:%S"
       DEFAULT_AUTHOR = 'you'
-      @@to_xml       = { :save_with => Nokogiri::XML::Node::SaveOptions::DEFAULT_XHTML ^ 1, :indent => 0, :encoding => 'UTF-8' }
 
       def title
         h1 = @h1_title ? page_header_from_content(@content) : false
@@ -47,11 +47,23 @@ module Precious
         return DEFAULT_AUTHOR unless first
         first.author.name.respond_to?(:force_encoding) ? first.author.name.force_encoding('UTF-8') : first.author.name
       end
+      
+      def date_full
+        first = @version ? page.version : page.last_version
+        return Time.now unless first
+        first.authored_date
+      end
 
       def date
-        first = @version ? page.version : page.last_version
-        return Time.now.strftime(DATE_FORMAT) unless first
-        first.authored_date.strftime(DATE_FORMAT)
+        date_full.strftime(DATE_FORMAT)
+      end
+      
+      def datetime
+        date_full.utc.iso8601
+      end
+      
+      def date_format
+        DATE_FORMAT
       end
 
       def noindex
@@ -61,11 +73,11 @@ module Precious
       def editable
         @editable
       end
-      
+
       def search
         true
       end
-      
+
       def history
         true
       end
@@ -73,11 +85,11 @@ module Precious
       def latest_changes
         true
       end
-      
+
       def overview
-        true 
+        true
       end
-        
+
       def allow_editing
         @allow_editing
       end
@@ -157,14 +169,6 @@ module Precious
         @toc_content
       end
 
-      def mathjax
-        @mathjax
-      end
-
-      def mathjax_config
-        @mathjax_config
-      end
-
       def use_identicon
         @page.wiki.user_icons == 'identicon'
       end
@@ -182,7 +186,7 @@ module Precious
       # Returns Hash.
       def metadata
         @page.metadata
-      end   
+      end
 
       # Access to embedded metadata.
       #
@@ -247,7 +251,7 @@ module Precious
             title.remove unless title.empty?
           end
         # .inner_html will cause href escaping on UTF-8
-        doc.css("div#gollum-root").children.to_xml(@@to_xml)
+        doc.css("div#gollum-root").children.to_xml(Gollum::Markup.to_xml_opts)
       end
 
       def table(data)

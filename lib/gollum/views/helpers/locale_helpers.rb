@@ -21,6 +21,13 @@ module Precious
         autofill I18n.t(locale_klass_name)
       end
 
+      # Returns all I18n translation strings from the root of an I18n YAML file.
+      # Otherwise, it works exactly like the `#t` method that's also defined in
+      # this file.
+      def tt
+        autofill I18n.t('.')
+      end
+
       private
 
       # Recursively looks up I18n translation values and autofills any YAML
@@ -42,7 +49,7 @@ module Precious
       end
 
       def fill_argument_content(i18n_key, i18n_value)
-        i18n_value.gsub!(YAML_VARIABLE_REGEXP) do |argument|
+        i18n_value = i18n_value.gsub(YAML_VARIABLE_REGEXP) do |argument|
           method_name = argument.gsub(/[^\w]/, '')
 
           next if method_name.nil?

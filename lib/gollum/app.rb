@@ -9,26 +9,35 @@ require 'json'
 require 'sprockets'
 require 'sprockets-helpers'
 require 'octicons'
-require 'sass'
 require 'pathname'
 
 require 'gollum'
 require 'gollum/assets'
+
+# Requirements for loading the layout view:
 require 'gollum/views/helpers'
 require 'gollum/views/helpers/locale_helpers'
+require 'gollum/views/template_cascade'
+
 require 'gollum/views/layout'
 require 'gollum/views/editable'
 require 'gollum/views/has_page'
 require 'gollum/views/has_user_icons'
+require 'gollum/views/has_math'
 require 'gollum/views/pagination'
 require 'gollum/views/rss.rb'
-require 'gollum/views/template_cascade'
+
+['sassc', 'sassc-embedded'].each do |gem|
+  require gem if Gem::Specification.find {|spec| spec.name == gem}
+end
 
 require File.expand_path '../helpers', __FILE__
 
 #required to upload bigger binary files
 Gollum::set_git_timeout(120)
 Gollum::set_git_max_filesize(190 * 10**6)
+
+Gollum::Filter::Code.language_handlers[/mermaid/] = Proc.new { |lang, code| "<div class=\"mermaid\">\n#{code}\n</div>" }
 
 # Run the frontend, based on Sinatra
 #
@@ -46,17 +55,19 @@ module Precious
 
   # For use with the --base-path option.
   class MapGollum
+  include Precious::Helpers
     def initialize(base_path)
+      base_route = "/#{remove_leading_and_trailing_slashes(base_path)}"
       @mg = Rack::Builder.new do
 
-        map "/#{base_path}" do
+        map base_route do
           run Precious::App
         end
         map '/' do
-          run Proc.new { [302, { 'Location' => "/#{base_path}" }, []] }
+          run Proc.new { [302, { 'Location' => base_route }, []] }
         end
         map '/*' do
-          run Proc.new { [302, { 'Location' => "/#{base_path}" }, []] }
+          run Proc.new { [302, { 'Location' => base_route }, []] }
         end
 
       end
@@ -92,7 +103,7 @@ module Precious
     }
 
     # Sinatra error handling
-    configure :development, :staging do
+    configure :development, :staging, :gollum_development do
       enable :show_exceptions, :dump_errors
       disable :raise_errors, :clean_trace
     end
@@ -102,18 +113,16 @@ module Precious
     end
 
     before do
-      settings.wiki_options[:allow_editing] = settings.wiki_options.fetch(:allow_editing, true)
-      @allow_editing = settings.wiki_options[:allow_editing]
+      @allow_editing = settings.wiki_options.fetch(:allow_editing, true)
       @critic_markup = settings.wiki_options[:critic_markup]
       @redirects_enabled = settings.wiki_options.fetch(:redirects_enabled, true)
       @per_page_uploads = settings.wiki_options[:per_page_uploads]
-
+      @show_local_time = settings.wiki_options.fetch(:show_local_time, false)
+      
       @wiki_title = settings.wiki_options.fetch(:title, 'Gollum Wiki')
-
-      forbid unless @allow_editing || request.request_method == 'GET'
+      @default_keybinding = settings.wiki_options.fetch(:default_keybinding, 'default')
 
       if settings.wiki_options[:template_dir]
-        Precious::Views::Layout.extend Precious::Views::TemplateCascade
         Precious::Views::Layout.template_priority_path = settings.wiki_options[:template_dir]
       end
 
@@ -124,9 +133,12 @@ module Precious
       settings.wiki_options.merge!({ :base_path => @base_url })
       @css = settings.wiki_options[:css]
       @js  = settings.wiki_options[:js]
-      @mathjax_config = settings.wiki_options[:mathjax_config]
+      @math = settings.wiki_options[:math]
+      @math_config = settings.wiki_options.fetch(:math_config, false)
+      @mermaid = settings.wiki_options.fetch(:mermaid, true)
+      Gollum::Filter::Code.language_handlers.delete(/mermaid/) unless @mermaid
 
-      @use_static_assets = settings.wiki_options.fetch(:static, settings.environment != :development)
+      @use_static_assets = settings.wiki_options.fetch(:static, settings.environment != :gollum_development)
       @static_assets_path = settings.wiki_options.fetch(:static_assets_path, ::File.join(File.dirname(__FILE__), 'public/assets'))
       @mathjax_path = ::File.join(File.dirname(__FILE__), 'public/gollum/javascript/MathJax')
 
@@ -140,6 +152,8 @@ module Precious
           config.manifest = Sprockets::Manifest.new(settings.sprockets, @static_assets_path)
         end
       end
+
+      forbid unless @allow_editing || request.request_method == 'GET'
     end
 
     get '/' do
@@ -176,7 +190,18 @@ module Precious
         content_type :json
         if page = wiki_page(params[:path]).page
           version = page.last_version
-          {:author => version.author.name, :date => version.authored_date}.to_json
+          authored_date = version.authored_date
+          authored_date = authored_date.utc.iso8601 if @show_local_time
+          {:author => version.author.name, :date => authored_date}.to_json
+        end
+      end
+
+      include Precious::Views::OcticonHelpers
+      get '/octicon/:name' do
+        begin
+          [200, {'Content-Type' => 'image/svg'}, rocticon_css(params['name'])]
+        rescue RuntimeError
+          not_found
         end
       end
 
@@ -194,15 +219,15 @@ module Precious
         end
       end
 
-      get %r{/(edit|create)/(\.redirects.gollum|(custom|mathjax\.config)\.(js|css))} do
+      get %r{/(edit|create)/(\.redirects.gollum|(custom|math\.config)\.(js|css))} do
         forbid('Changing this resource is not allowed.')
       end
 
-      post %r{/(delete|rename|edit|create)/(\.redirects.gollum|(custom|mathjax\.config)\.(js|css))} do
+      post %r{/(delete|rename|edit|create)/(\.redirects.gollum|(custom|math\.config)\.(js|css))} do
         forbid('Changing this resource is not allowed.')
       end
 
-      post %r{/revert/(\.redirects.gollum|(custom|mathjax\.config\.)\.(js|css)/.*/.*)} do
+      post %r{/revert/(\.redirects.gollum|(custom|math\.config\.)\.(js|css)/.*/.*)} do
         forbid('Changing this resource is not allowed.')
       end
 
@@ -217,7 +242,6 @@ module Precious
           if page = wikip.page
               @page         = page
               @content      = page.text_data
-              @mathjax      = wiki.mathjax
               @etag         = page.sha
               mustache :edit
           else
@@ -237,22 +261,9 @@ module Precious
           tempfile = params[:file][:tempfile]
         end
         halt 500 unless tempfile.is_a? Tempfile
+        
+        dir = wiki.per_page_uploads ? find_per_page_upload_subdir(request.referer, request.host_with_port, wiki.base_path) : 'uploads'
 
-        if wiki.per_page_uploads
-          dir = request.referer.sub(request.base_url, '')
-          # remove base path if it is set
-          dir.sub!(/^#{wiki.base_path}/, '') if wiki.base_path
-          # remove base_url and gollum/* subpath if necessary
-          dir.sub!(/^\/gollum\/[-\w]+\//, '')
-          # remove file extension
-          dir.sub!(/#{::File.extname(dir)}$/, '')
-          # revert escaped whitespaces
-          dir.gsub!(/%20/, ' ')
-          dir = ::File.join('uploads', dir)
-        else
-          # store all uploads together
-          dir = 'uploads'
-        end
         halt 500 if dir.include?('..')
         halt 500 unless Pathname(dir).relative?
 
@@ -270,7 +281,7 @@ module Precious
           options.merge! author
         end
 
-        normalize = Gollum::Page.valid_extension?(fullname)
+        options[:normalize] = Gollum::Page.valid_extension?(fullname)
 
         begin
           wiki.write_file(reponame, contents, options)
@@ -279,7 +290,7 @@ module Precious
           @message = e.message
           mustache :error
         rescue Gollum::DuplicatePageError
-          halt 409 # Signal conflict
+          halt 409, "The file you are trying to upload already exists." # Signal conflict
         end
       end
 
@@ -303,7 +314,7 @@ module Precious
           rename                    = "#{target_dir}/#{target_name}"
         end
 
-        committer = Gollum::Committer.new(wiki, commit_message)
+        committer = Gollum::Committer.new(wiki, commit_options)
         commit    = { :committer => committer }
 
         success = wiki.rename_page(page, rename, commit)
@@ -337,7 +348,8 @@ module Precious
           halt 412, {etag: page.sha, text_data: page.text_data}.to_json
         end
 
-        committer = Gollum::Committer.new(wiki, commit_message)
+        begin
+        committer = Gollum::Committer.new(wiki, commit_options)
         commit    = { :committer => committer }
 
         update_wiki_page(wiki, page, params[:content], commit, page.name, params[:format])
@@ -345,6 +357,9 @@ module Precious
         update_wiki_page(wiki, page.footer, params[:footer], commit) if params[:footer]
         update_wiki_page(wiki, page.sidebar, params[:sidebar], commit) if params[:sidebar]
         committer.commit
+        rescue Gollum::DuplicatePageError
+          halt 409, "You are trying to save this page under a path (#{page.escaped_url_path}) that already exists." # Signal conflict
+        end
 
       end
 
@@ -353,7 +368,7 @@ module Precious
         wiki = wiki_new
         filepath = params[:splat].first
         unless filepath.nil?
-          commit           = commit_message
+          commit           = commit_options
           commit[:message] = "Deleted #{filepath}"
           wiki.delete_file(filepath, commit)
         end
@@ -365,7 +380,7 @@ module Precious
         @name = wikip.name
         @ext  = wikip.ext
         @path = wikip.path
-        @template_page = load_template(@path) if settings.wiki_options[:template_page]
+        @template_page = load_template(wikip, @path) if settings.wiki_options[:template_page]
         @allow_uploads = wikip.wiki.allow_uploads
         @upload_dest   = find_upload_dest(wikip.fullpath)
 
@@ -390,7 +405,7 @@ module Precious
         path.gsub!(/^\//, '')
 
         begin
-          wiki.write_page(::File.join(path, name), format, params[:content], commit_message)
+          wiki.write_page(::File.join(path, name), format, params[:content], commit_options)
 
           redirect to("/#{clean_url(::File.join(encodeURIComponent(path), encodeURIComponent(wiki.page_file_name(name, format))))}")
         rescue Gollum::DuplicatePageError, Gollum::IllegalDirectoryPath => e
@@ -408,7 +423,7 @@ module Precious
         sha1  = params[:sha1]
         sha2  = params[:sha2]
 
-        commit           = commit_message
+        commit           = commit_options
         commit[:message] = "Revert commit #{sha2.chars.take(7).join}"
         if wiki.revert_page(@page, sha1, sha2, commit)
           redirect to("/#{@page.escaped_url_path}")
@@ -439,23 +454,18 @@ module Precious
         mustache :page
       end
 
+      get %r{
+        /history/             # match any URL beginning with /history/
+        (.+?)                 # extract the full path (including any directories)
+        /
+        ([0-9a-f]{40})        # match SHA
+      }x do |path, version|
+        wiki = wiki_new
+        show_history wiki_page(path, version, wiki)
+      end
+
       get '/history/*' do
-        wikip      = wiki_page(params[:splat].first)
-        @name      = wikip.fullname
-        @page      = wikip.page
-        @page_num  = [params[:page_num].to_i, 1].max
-        @max_count = settings.wiki_options.fetch(:pagination_count, 10)
-        unless @page.nil?
-          @wiki      = @page.wiki
-          @versions = @page.versions(
-            per_page: @max_count,
-            page_num: @page_num,
-            follow: settings.wiki_options.fetch(:follow_renames, true)
-          )
-          mustache :history
-        else
-          redirect to("/")
-        end
+        show_history wiki_page(params[:splat].first)
       end
 
       get '/latest_changes' do
@@ -597,10 +607,43 @@ module Precious
     end
 
     get '/*' do
-      show_page_or_file(params[:splat].first)
+      fullpath = params[:splat].first
+      if params.has_key?("raw")
+        show_raw_page(fullpath)
+      else
+        show_page_or_file(fullpath)
+      end
     end
 
     private
+
+    def redirect_to(redirect_path, fullpath, query_params)
+        redirect to("#{encodeURI(redirect_path)}?redirected_from=#{encodeURI(fullpath)}#{query_params}")
+    end
+
+    def page_does_not_exist()
+      @message = "The requested page does not exist."
+      status 404
+      return mustache :error
+    end
+
+    def show_history(wikip)
+      @name      = wikip.fullname
+      @page      = wikip.page
+      @page_num  = [params[:page_num].to_i, 1].max
+      @max_count = settings.wiki_options.fetch(:pagination_count, 10)
+      unless @page.nil?
+        @wiki     = @page.wiki
+        @versions = @page.versions(
+          per_page: @max_count,
+          page_num: @page_num,
+          follow: settings.wiki_options.fetch(:follow_renames, true)
+        )
+        mustache :history
+      else
+        redirect to("/")
+      end
+    end
 
     def show_page_or_file(fullpath)
       wiki = wiki_new
@@ -613,7 +656,6 @@ module Precious
         # Extensions and layout data
         @editable      = true
         @toc_content   = wiki.universal_toc ? @page.toc_data : nil
-        @mathjax       = wiki.mathjax
         @h1_title      = wiki.h1_title
         @bar_side      = wiki.bar_side
         @allow_uploads = wiki.allow_uploads
@@ -622,32 +664,41 @@ module Precious
       elsif file = wiki.file(fullpath, wiki.ref, true)
         show_file(file)
       elsif @redirects_enabled && redirect_path = wiki.redirects[fullpath]
-        redirect to("#{encodeURIComponent(redirect_path)}?redirected_from=#{encodeURIComponent(fullpath)}")
+        redirect_to(redirect_path, fullpath, "")
       else
         if @allow_editing
           path = fullpath[-1] == '/' ? "#{fullpath}#{wiki.index_page}" : fullpath # Append default index page if no page name is supplied
           redirect to("/gollum/create/#{clean_url(encodeURIComponent(path))}")
         else
-          @message = "The requested page does not exist."
-          status 404
-          return mustache :error
+          return page_does_not_exist
         end
+      end
+    end
+
+    def show_raw_page(fullpath)
+      wiki = wiki_new
+      if @redirects_enabled && redirect_path = wiki.redirects[fullpath]
+        redirect_to(redirect_path, fullpath, "&raw")
+      elsif page = wiki.page(fullpath) and file = wiki.file(fullpath, wiki.ref, true)
+        show_file(file)
+      else
+        return page_does_not_exist
       end
     end
 
     def show_file(file)
       return unless file
+      content_type file.mime_type
       if file.on_disk?
         send_file file.on_disk_path, :disposition => 'inline'
       else
-        content_type file.mime_type
         file.raw_data
       end
     end
 
-    def load_template(path)
+    def load_template(wiki_page, path)
       template_page = wiki_page(::File.join(path, '_Template')).page || wiki_page('/_Template').page
-      template_page ? Gollum::TemplateFilter.apply_filters(template_page.text_data) : nil
+      template_page ? Gollum::TemplateFilter.apply_filters(wiki_page, template_page.text_data) : nil
     end
 
     def update_wiki_page(wiki, page, content, commit, name = nil, format = nil)
@@ -659,9 +710,9 @@ module Precious
       wiki.update_page(page, name, format, content.to_s, commit)
     end
 
-    def wiki_page(path, version = nil)
+    def wiki_page(path, version = nil, wiki = nil)
       pathname = (Pathname.new('/') + path).cleanpath
-      wiki = wiki_new
+      wiki = wiki_new if wiki.nil?
       OpenStruct.new(:wiki => wiki, :page => wiki.page(pathname.to_s, version = version),
                      :name => pathname.basename.sub_ext('').to_s, :path => pathname.dirname.to_s, :ext => pathname.extname, :fullname => pathname.basename.to_s, :fullpath => pathname.to_s)
     end
@@ -675,13 +726,14 @@ module Precious
     #     :name      - The String author full name.
     #     :email     - The String email address.
     # message is sourced from the incoming request parameters
-    # author details are sourced from the session, to be populated by rack middleware ahead of us
-    def commit_message
+    # optional author details are sourced from the session, to be populated by rack middleware ahead of us.
+    # optional note is equally sourced from the session.
+    def commit_options
       msg               = (params[:message].nil? or params[:message].empty?) ? "[no message]" : params[:message]
-      commit_message    = { :message => msg }
+      commit_options    = { message: msg, note: session['gollum.note'] }
       author_parameters = session['gollum.author']
-      commit_message.merge! author_parameters unless author_parameters.nil?
-      commit_message
+      commit_options.merge! author_parameters unless author_parameters.nil?
+      commit_options
     end
 
     def find_upload_dest(path)

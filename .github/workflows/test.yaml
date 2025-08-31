@@ -1,29 +1,82 @@
 name: Ruby Build
-on: [push, pull_request]
+on:
+  push:
+    branches: master
+    paths-ignore:
+      - '**.md'
+      - '**.txt'
+      - 'contrib/**'
+  pull_request:
+    paths-ignore:
+      - '**.md'
+      - '**.txt'
+      - 'contrib/**'
+
 jobs:
-  build:
+  jruby_build:
+    name: JRuby (${{ matrix.ruby }})
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        ruby: [2.4.0, 2.6.0, 3.0.0, jruby-9.2.18.0]
+        ruby: [jruby-9.4]
     steps:
-      - run: echo "The job was automatically triggered by a ${{ github.event_name }} event."
-      - run: echo "This job is now running on a ${{ runner.os }} server hosted by GitHub!"
-      - run: echo "The name of your branch is ${{ github.ref }} and your repository is ${{ github.repository }}."
       - name: Check out repository code
-        uses: actions/checkout@v2
-      - run: echo "The ${{ github.repository }} repository has been cloned to the runner."
-      - run: echo "The workflow is now ready to test your code on the runner."
-      - name: List files in the repository
-        run: |
-          ls ${{ github.workspace }}
-      - uses: actions/setup-java@v2
+        uses: actions/checkout@v4
+      - name: Set up Java
+        uses: actions/setup-java@v4
         with:
-          distribution: 'adopt'
-          java-version: '9'
-      - uses: ruby/setup-ruby@v1
+          distribution: 'temurin'
+          java-version: '17'
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
         with:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: true
-      - name: exec rake
+      - name: Run tests
         run: bundle exec rake
+      - name: Create WAR executable
+        run: bundle exec warble runnable war ${{ github.workspace }}/Gemfile
+
+  mri_build:
+    name: Ruby (${{ matrix.ruby }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        ruby: ['3.2.1', '3.3', '3.4']
+    steps:
+      - name: Install required system dependencies
+        run: |
+          sudo apt-get install -y libyaml-dev
+      - name: Check out repository code
+        uses: actions/checkout@v4
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby }}
+          rubygems: 3.5.14
+          bundler-cache: true
+      - name: Run tests
+        run: bundle exec rake
+
+  selenium:
+    name: Selenium on MRI
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install required system dependencies
+        run: |
+          sudo apt-get install -y libyaml-dev
+      - name: Check out repository code
+        uses: actions/checkout@v4
+      - name: Install Chromedriver
+        uses: nanasess/setup-chromedriver@v2
+      - run: |
+          export DISPLAY=:99
+          chromedriver --url-base=/wd/hub &
+          sudo Xvfb -ac :99 -screen 0 1280x1024x24 > /dev/null 2>&1 & # optional
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2.1'
+          bundler-cache: true
+      - name: Run tests
+        run: bundle exec rake test:capybara

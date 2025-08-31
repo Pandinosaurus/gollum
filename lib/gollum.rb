@@ -13,10 +13,12 @@ require 'rhino' if RUBY_PLATFORM == 'java'
 require ::File.expand_path('../gollum/uri_encode_component', __FILE__)
 
 module Gollum
-  VERSION = '5.2.3'
+  VERSION = '6.1.0'
+  KEYBINDINGS = ['default', 'vim', 'emacs']
 
-  ::I18n.available_locales = [:en]
-  ::I18n.load_path = Dir[::File.expand_path("lib/gollum/locales") + "/*.yml"]
+  ::I18n.available_locales = [:en, :cn]
+  ::I18n.load_path = Dir[::File.expand_path("../gollum/locales",  __FILE__) + "/*.yml"]
+  ::I18n.default_locale = :en
 
   def self.assets_path
     ::File.expand_path('gollum/public', ::File.dirname(__FILE__))
@@ -29,9 +31,10 @@ module Gollum
       @@filters[pattern] = replacement
     end
 
-    def self.apply_filters(data)
+    def self.apply_filters(wiki_page, data)
       @@filters.each do |pattern, replacement|
-        data.gsub!(pattern, replacement.call)
+        params = replacement.parameters.length == 0 ? nil : wiki_page
+        data.gsub!(pattern, replacement.call(*params))
       end
       data
     end
